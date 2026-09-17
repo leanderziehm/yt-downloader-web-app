@@ -3,13 +3,22 @@
 ```
 git clone https://github.com/LeanderZiehm/yt-downloader-flask-web
 cd yt-downloader-flask-web
-pip install -r requirements.txt
+
 ```
 
+# install on device
 # run
 
 ```
+pip install -r requirements.txt
 python3 main.py
+```
+
+# install using docker / (podman)
+```
+podman build -t my-flask-app .
+podman run --rm -p 5000:5000 my-flask-app
+podman run -d --name my-flask-app -p 5000:5000 my-flask-app
 ```
 
 # open
