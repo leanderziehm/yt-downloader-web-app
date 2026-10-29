@@ -1,297 +1,206 @@
-from flask import Flask, request, jsonify, render_template, send_file
+import re
+from pathlib import Path
+from datetime import datetime, timezone
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from pytubefix import YouTube
-import threading
-import uuid
-import os
-import time
-import json
-from flask_cors import CORS
-from datetime import datetime
+from pytubefix.cli import on_progress
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI()
 
-download_tasks = {}
+OUTPUT_DIR = Path("out_dir")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+@app.get("/")
+async def serve_index():
+    return FileResponse("./static/index.html", media_type="text/html")
 
 
-@app.route("/")
-def index():
-    """Serve the main page"""
-    return render_template("index.html")
+class FileRequest(BaseModel):
+    filename: str
 
 
-@app.route("/history.html")
-def history():
-    """Serve the download history page"""
+def filename_to_save(filename: str) -> str:
+    """
+    Sanitize a filename:
+    - Keep ASCII characters only.
+    - Replace spaces with underscores.
+    - Remove URL-unsafe and filesystem-unsafe characters.
+    - Preserve letters, digits, dots, underscores, and hyphens.
+    - Prevent empty names and special directory names.
+    """
+    if not isinstance(filename, str):
+        raise ValueError("Filename must be a string")
 
-    return render_template("history.html")
+    # Use only the filename, not a directory path.
+    if filename != filename.strip():
+        raise ValueError("Filename cannot start or end with whitespace")
+
+    if not filename or filename in (".", ".."):
+        raise ValueError("Invalid filename")
+
+    # Reject directory traversal and path separators.
+    if "/" in filename or "\\" in filename:
+        raise ValueError("Directory paths are not allowed")
+
+    # Replace spaces with underscores.
+    filename = filename.replace(" ", "_")
+
+    # Keep ASCII letters, digits, dots, underscores, and hyphens.
+    filename = re.sub(r"[^a-zA-Z0-9._-]", "", filename)
+
+    # Avoid special directory names and empty filenames.
+    if not filename or filename in (".", ".."):
+        raise ValueError("Invalid filename")
+
+    # Avoid hidden files and names beginning with a dot.
+    filename = filename.lstrip(".")
+
+    if not filename or filename in (".", ".."):
+        raise ValueError("Invalid filename")
+
+    # Limit filename length.
+    filename = filename[:200]
+
+    return filename
 
 
-def get_download_path():
-    """Get the download directory path"""
-    download_dir = os.path.join(os.getcwd(), "downloads")
-    if not os.path.exists(download_dir):
-        os.makedirs(download_dir)
-    return download_dir
+def get_file_path(filename: str) -> Path:
+    """Return a safe file path inside OUTPUT_DIR, matching existing files if possible."""
+    safe_name = filename_to_save(filename)
+    output_dir = OUTPUT_DIR.resolve()
 
+    for file_path in output_dir.iterdir():
+        if filename_to_save(file_path.name) == safe_name:
+            resolved_path = file_path.resolve()
 
-def get_history_file_path():
-    """Get the path to the download history JSON file"""
-    return os.path.join(os.getcwd(), "download_history.json")
+            if not resolved_path.is_relative_to(output_dir):
+                raise ValueError("Invalid filename")
 
+            return resolved_path
 
-def load_download_history():
-    """Load the download history from the JSON file"""
-    history_path = get_history_file_path()
-    if os.path.exists(history_path):
-        try:
-            with open(history_path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading download history: {e}")
-            return []
-    return []
+    # No matching file exists; return the intended safe path.
+    resolved_path = (output_dir / safe_name).resolve()
 
+    if not resolved_path.is_relative_to(output_dir):
+        raise ValueError("Invalid filename")
 
-def save_to_download_history(download_data):
-    """Save download metadata to the history file"""
-    history_path = get_history_file_path()
-    history = load_download_history()
+    return resolved_path
 
-    # Add the new download to the history
-    history.append(download_data)
+# def create_file(filename: str, out_dir: Path = OUTPUT_DIR) -> Path:
+    # """Create a file using a sanitized filename."""
+    # safe_name = filename_to_save(filename)
+    # file_path = out_dir / safe_name
 
-    # Save back to the file
+    # file_path.write_text("Hello World", encoding="utf-8")
+
+    # return file_path
+
+def create_file(url:str, out_dir: Path = OUTPUT_DIR) -> Path:
+    yt = YouTube(url, on_progress_callback=on_progress)
+    print(yt.title)
+    ys = yt.streams.get_audio_only()
+    outpath = ys.download(output_path=out_dir)
+    return Path(outpath)
+
+@app.post("/create-file")
+def generate_file(request: FileRequest):
     try:
-        with open(history_path, "w") as f:
-            json.dump(history, f, indent=2)
-    except Exception as e:
-        print(f"Error saving download history: {e}")
+        file_path = create_file(request.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError:
+        raise HTTPException(status_code=500, detail="Could not create file")
 
+    if file_path == None:
+        raise HTTPException(status_code=500, detail="Could not create file")
+    # if file_path == None:
+        # raise HTTPException(status_code=500, detail="Could not create file")
 
-def download_video(url, download_id):
-    """Function to download YouTube video in a separate thread"""
-    try:
-        # Record start time
-        start_time = datetime.now().isoformat()
-        download_tasks[download_id]["started_at"] = time.time()
-        download_tasks[download_id]["start_time_iso"] = start_time
-        download_tasks[download_id]["status"] = "downloading"
-
-        yt = YouTube(url)
-
-        def progress_callback(stream, chunk, bytes_remaining):
-            file_size = stream.filesize
-            bytes_downloaded = file_size - bytes_remaining
-            download_tasks[download_id]["total_size"] = file_size
-            download_tasks[download_id]["bytes_downloaded"] = bytes_downloaded
-            download_tasks[download_id]["percentage"] = int(
-                (bytes_downloaded / file_size) * 100
-            )
-
-        yt.register_on_progress_callback(progress_callback)
-
-        video = yt.streams.filter(progressive=True).get_highest_resolution()
-
-        download_tasks[download_id]["total_size"] = video.filesize
-        download_tasks[download_id]["title"] = yt.title
-        thumbnail_url = yt.thumbnail_url
-        print(thumbnail_url)
-        download_tasks[download_id]["thumbnail_url"] = thumbnail_url
-
-        output_path = get_download_path()
-        filename = video.download(output_path=output_path)
-        filename_only = os.path.basename(filename)
-
-        # Record end time
-        end_time = datetime.now().isoformat()
-
-        download_tasks[download_id]["status"] = "completed"
-        download_tasks[download_id]["percentage"] = 100
-        download_tasks[download_id]["file_path"] = filename
-        download_tasks[download_id]["filename"] = filename_only
-        download_tasks[download_id]["end_time_iso"] = end_time
-
-        # Get video length from YouTube metadata instead of using MoviePy
-        length_seconds = yt.length  # This is provided by PyTubefix
-        download_tasks[download_id]["duration_seconds"] = length_seconds
-
-        # Save download metadata to history
-        history_entry = {
-            "download_id": download_id,
-            "url": url,
-            "title": yt.title,
-            "thumbnail_url": thumbnail_url,
-            "filename": filename_only,
-            "file_path": filename,
-            "filesize": video.filesize,
-            "start_time": start_time,
-            "end_time": end_time,
-            "duration_seconds": length_seconds,
-            "video_id": yt.video_id,
-        }
-
-        save_to_download_history(history_entry)
-
-    except Exception as e:
-        download_tasks[download_id]["status"] = "error"
-        download_tasks[download_id]["error"] = str(e)
-        print(f"Error downloading video: {e}")
-
-
-@app.route("/download", methods=["POST"])
-def start_download():
-    """Endpoint to start a download"""
-    data = request.get_json()
-    url = data.get("url")
-
-    if not url:
-        return jsonify({"error": "URL is required"}), 400
-
-    download_id = str(uuid.uuid4())
-
-    download_tasks[download_id] = {
-        "url": url,
-        "total_size": 0,
-        "bytes_downloaded": 0,
-        "percentage": 0,
-        "status": "initializing",
-        "started_at": time.time(),
+    return {
+        "message": "File created successfully",
+        "filename": file_path.name,
+        "file_path": str(file_path),
+        "file_id": file_path.name,
+        "download_url": f"/download/{file_path.name}",
+        "delete_url": f"/files/{file_path.name}",
     }
 
-    thread = threading.Thread(target=download_video, args=(url, download_id))
-    thread.daemon = True
-    thread.start()
 
-    return jsonify({"download_id": download_id})
+@app.get("/files")
+def list_files():
+    files = []
 
+    for file_path in OUTPUT_DIR.iterdir():
+        if not file_path.is_file():
+            continue
 
-@app.route("/progress/<download_id>", methods=["GET"])
-def check_progress(download_id):
-    """Endpoint to check download progress"""
-    if download_id not in download_tasks:
-        return jsonify({"error": "Download ID not found"}), 404
+        stat = file_path.stat()
 
-    download_info = download_tasks[download_id]
+        files.append({
+            "filename": file_path.name,
+            "file_id": file_path.name,
+            "file_size_bytes": stat.st_size,
+            "file_size_kb": round(stat.st_size / 1024, 2),
+            "created_date": datetime.fromtimestamp(
+                stat.st_ctime,
+                tz=timezone.utc,
+            ).isoformat(),
+            "download_url": f"/download/{filename_to_save(file_path.name)}",
+            "delete_url": f"/files/{file_path.name}",
+        })
 
-    return jsonify(download_info)
-
-
-@app.route("/get_file/<download_id>", methods=["GET"])
-def get_file(download_id):
-    """Endpoint to download the file once it's ready"""
-    if download_id not in download_tasks:
-        return jsonify({"error": "Download ID not found"}), 404
-
-    download_info = download_tasks[download_id]
-
-    if download_info["status"] != "completed":
-        return jsonify({"error": "Download not completed yet"}), 400
-
-    file_path = download_info["file_path"]
-    return send_file(file_path, as_attachment=True)
+    return {
+        "total_files": len(files),
+        "files": files,
+    }
 
 
-@app.route("/get_file_by_name/<filename>", methods=["GET"])
-def get_file_by_name(filename):
-    """Endpoint to download a file by its filename"""
-    download_dir = get_download_path()
-    file_path = os.path.join(download_dir, filename)
+@app.get("/download/{filename}")
+def download_file(filename: str):
+    try:
+        file_path = get_file_path(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    # Prevent directory traversal
-    if not os.path.abspath(file_path).startswith(os.path.abspath(download_dir)):
-        return jsonify({"error": "Invalid filename"}), 400
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
 
-    if not os.path.exists(file_path):
-        return jsonify({"error": "File not found"}), 404
-
-    return send_file(file_path, as_attachment=True)
-
-
-@app.route("/cleanup_old_tasks", methods=["POST"])
-def cleanup_old_tasks():
-    """Endpoint to clean up old completed tasks"""
-    current_time = time.time()
-    tasks_to_remove = []
-
-    for task_id, task_info in download_tasks.items():
-        if current_time - task_info.get("started_at", current_time) > 3600:
-            tasks_to_remove.append(task_id)
-
-    for task_id in tasks_to_remove:
-        download_tasks.pop(task_id, None)
-
-    return jsonify({"removed_tasks": len(tasks_to_remove)})
+    return FileResponse(
+        path=file_path,
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )
 
 
-@app.route("/history", methods=["GET"])
-def download_history():
-    """
-    Return the download history from the JSON file
-    """
-    history = load_download_history()
+@app.delete("/files/{filename}")
+def delete_file(filename: str):
+    """Delete a file from OUTPUT_DIR."""
+    try:
+        file_path = get_file_path(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    # Sort by end time (newest first)
-    history.sort(key=lambda x: x.get("end_time", ""), reverse=True)
-
-    return jsonify(history)
-
-
-@app.route("/file_status", methods=["GET"])
-def check_file_status():
-    """
-    Check if files in the history still exist in the filesystem
-    """
-    history = load_download_history()
-    download_dir = get_download_path()
-
-    for entry in history:
-        filename = entry.get("filename")
-        if filename:
-            file_path = os.path.join(download_dir, filename)
-            entry["file_exists"] = os.path.exists(file_path)
-        else:
-            entry["file_exists"] = False
-
-    return jsonify(history)
-
-
-@app.route("/delete_file", methods=["POST"])
-def delete_file():
-    """
-    Delete a given file from the downloads folder and remove from history.
-    JSON body: { "filename": "<name of file to delete>" }
-    """
-    data = request.get_json()
-    fname = data.get("filename")
-    if not fname:
-        return jsonify({"error": "filename is required"}), 400
-
-    download_dir = get_download_path()
-    safe_path = os.path.abspath(os.path.join(download_dir, fname))
-    # Prevent path traversal
-    if not safe_path.startswith(os.path.abspath(download_dir) + os.sep):
-        return jsonify({"error": "invalid filename"}), 400
-
-    if not os.path.exists(safe_path):
-        return jsonify({"error": "file not found"}), 404
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        # Delete the file
-        os.remove(safe_path)
+        file_path.unlink()
+    except OSError:
+        raise HTTPException(status_code=500, detail="Could not delete file")
 
-        # Remove entry from history
-        history = load_download_history()
-        history = [entry for entry in history if entry.get("filename") != fname]
+    return {
+        "message": "File deleted successfully",
+        "filename": file_path.name,
+        "file_id": file_path.name,
+    }
 
-        # Save updated history
-        with open(get_history_file_path(), "w") as f:
-            json.dump(history, f, indent=2)
 
-        return jsonify({"deleted": fname}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+def main():
+    create_file("hello.txt")
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0",port=5000)
+    main()

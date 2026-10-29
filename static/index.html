@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>File Manager</title>
+
+    <style>
+        /* ---------- Global ---------- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --background: #f5f7fb;
+            --surface: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --success: #15803d;
+            --success-bg: #f0fdf4;
+            --danger: #dc2626;
+            --danger-hover: #b91c1c;
+            --danger-bg: #fef2f2;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .container {
+            width: min(1100px, 92%);
+            margin: 0 auto;
+            padding: 36px 0;
+        }
+
+        /* ---------- Header ---------- */
+        .header {
+            margin-bottom: 28px;
+        }
+
+        .header h1 {
+            font-size: 30px;
+            letter-spacing: -0.8px;
+            margin-bottom: 6px;
+        }
+
+        .header p {
+            color: var(--muted);
+            font-size: 15px;
+        }
+
+        /* ---------- Cards ---------- */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 26px;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.035);
+        }
+
+        .section-title {
+            font-size: 20px;
+            margin-bottom: 6px;
+        }
+
+        .section-description {
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 22px;
+        }
+
+        /* ---------- Create File ---------- */
+        .create-section {
+            margin-bottom: 28px;
+        }
+
+        .form-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+        }
+
+        .input-group {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .input-group input {
+            width: 100%;
+            height: 46px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 0 13px;
+            outline: none;
+            background: #fff;
+            color: var(--text);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-group input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 42px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background 0.2s, transform 0.1s;
+            white-space: nowrap;
+        }
+
+        .btn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #e2e8f0;
+        }
+
+        .btn-download {
+            background: #15803d;
+            color: #fff !important;
+        }
+
+        .btn-download:hover {
+            background: #166534;
+        }
+
+        .btn-danger {
+            background: var(--danger-bg);
+            color: var(--danger);
+            border: 1px solid #fecaca;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        /* ---------- Status Messages ---------- */
+        .status {
+            display: none;
+            margin-top: 18px;
+            padding: 13px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            overflow-wrap: anywhere;
+        }
+
+        .status.visible {
+            display: block;
+        }
+
+        .status.info {
+            background: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+        }
+
+        .status.success {
+            background: var(--success-bg);
+            color: var(--success);
+            border: 1px solid #bbf7d0;
+        }
+
+        .status.error {
+            background: var(--danger-bg);
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+
+        .status a {
+            color: inherit;
+            font-weight: 700;
+        }
+
+        .loading-indicator {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ---------- File List ---------- */
+        .files-section {
+            min-height: 280px;
+        }
+
+        .files-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .files-header .section-description {
+            margin-bottom: 0;
+        }
+
+        .files-header .title-wrapper {
+            min-width: 0;
+        }
+
+        .file-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 28px;
+            height: 25px;
+            padding: 0 8px;
+            margin-left: 7px;
+            border-radius: 20px;
+            background: #eef2ff;
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 700;
+            vertical-align: middle;
+        }
+
+        .files-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 17px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .file-item:hover {
+            border-color: #c7d2fe;
+            background: #fcfcff;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .file-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            flex-shrink: 0;
+            background: #eef2ff;
+            color: var(--primary);
+            border-radius: 10px;
+            font-size: 21px;
+        }
+
+        .file-details {
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 15px;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+            margin-bottom: 4px;
+        }
+
+        .file-meta {
+            color: var(--muted);
+            font-size: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px 10px;
+        }
+
+        .file-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 48px 20px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
+            color: var(--muted);
+        }
+
+        .empty-state .empty-icon {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        .empty-state h3 {
+            color: #334155;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .empty-state p {
+            font-size: 13px;
+        }
+
+        .list-loading {
+            padding: 32px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 24px 0 0;
+            color: #94a3b8;
+            font-size: 12px;
+        }
+
+        /* ---------- Responsive ---------- */
+        @media (max-width: 640px) {
+            .container {
+                width: 94%;
+                padding: 24px 0;
+            }
+
+            .header h1 {
+                font-size: 25px;
+            }
+
+            .card {
+                padding: 18px;
+            }
+
+            .form-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .form-row .btn {
+                width: 100%;
+            }
+
+            .files-header {
+                align-items: flex-start;
+            }
+
+            .file-item {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 14px;
+            }
+
+            .file-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+
+            .file-actions .btn {
+                flex: 1;
+            }
+
+            .files-header .btn {
+                padding: 9px 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="container">
+
+        <!-- Page Header -->
+        <header class="header">
+            <h1>File Manager</h1>
+            <p>Create, download, and manage your files in one place.</p>
+        </header>
+
+        <!-- Create File Section -->
+        <section class="card create-section">
+            <h2 class="section-title">Create a New File</h2>
+            <p class="section-description">
+                Enter a filename to create a file on your server.
+            </p>
+
+            <form id="createForm">
+                <div class="form-row">
+                    <div class="input-group">
+                        <label for="filename">Filename</label>
+                        <input
+                            type="text"
+                            id="filename"
+                            name="filename"
+                            placeholder="e.g. hello_world"
+                            maxlength="200"
+                            autocomplete="off"
+                            required
+                        >
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="createButton">
+                        Create File
+                    </button>
+                </div>
+            </form>
+
+            <div
+                id="createStatus"
+                class="status"
+                role="status"
+                aria-live="polite"
+            ></div>
+        </section>
+
+        <!-- Existing Files Section -->
+        <section class="card files-section">
+            <div class="files-header">
+                <div class="title-wrapper">
+                    <h2 class="section-title">
+                        Existing Files
+                        <span class="file-count" id="fileCount">0</span>
+                    </h2>
+
+                    <p class="section-description">
+                        Your files, sorted newest first.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="refreshButton"
+                >
+                    ↻ Refresh
+                </button>
+            </div>
+
+            <div id="filesList" class="files-list">
+                <div class="list-loading">
+                    Loading files...
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --------------------------------------------------
+        // Configuration
+        // --------------------------------------------------
+
+        // const API_BASE_URL = "http://127.0.0.1:8000";
+        // const API_BASE_URL = "";
+
+        // --------------------------------------------------
+        // DOM Elements
+        // --------------------------------------------------
+
+        const createForm = document.getElementById("createForm");
+        const filenameInput = document.getElementById("filename");
+        const createButton = document.getElementById("createButton");
+        const createStatus = document.getElementById("createStatus");
+        const filesList = document.getElementById("filesList");
+        const fileCount = document.getElementById("fileCount");
+        const refreshButton = document.getElementById("refreshButton");
+
+        // --------------------------------------------------
+        // API Helper
+        // --------------------------------------------------
+
+        async function apiRequest(endpoint, options = {}) {
+            let response;
+            console.log(endpoint);
+
+            try {
+                response = await fetch(endpoint, options);
+            } catch (error) {
+                throw new Error(
+                    "Cannot connect to the API. Make sure your FastAPI server is running."
+                );
+            }
+
+            if (!response.ok) {
+                let message = `Request failed (${response.status})`;
+
+                try {
+                    const data = await response.json();
+
+                    if (data.detail) {
+                        message = Array.isArray(data.detail)
+                            ? data.detail.map(item => item.msg || "Validation error").join(", ")
+                            : data.detail;
+                    } else if (data.message) {
+                        message = data.message;
+                    }
+                } catch {
+                    // Keep the default HTTP error message.
+                }
+
+                throw new Error(message);
+            }
+
+            return response;
+        }
+
+        // --------------------------------------------------
+        // Status Messages
+        // --------------------------------------------------
+
+        function showStatus(element, message, type = "info") {
+            element.className = `status visible ${type}`;
+            element.textContent = message;
+        }
+
+        function showLoadingStatus(element, message) {
+            element.className = "status visible info";
+            element.replaceChildren();
+
+            const spinner = document.createElement("span");
+            spinner.className = "loading-indicator";
+            spinner.setAttribute("aria-hidden", "true");
+
+            const text = document.createTextNode(` ${message}`);
+
+            element.append(spinner, text);
+        }
+
+        function clearStatus(element) {
+            element.className = "status";
+            element.replaceChildren();
+        }
+
+        // --------------------------------------------------
+        // Create File
+        // POST /create-file
+        // --------------------------------------------------
+
+        createForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            const filename = filenameInput.value.trim();
+
+            if (!filename) {
+                showStatus(createStatus, "Please enter a filename.", "error");
+                filenameInput.focus();
+                return;
+            }
+
+            createButton.disabled = true;
+            filenameInput.disabled = true;
+
+            createButton.textContent = "Creating...";
+            showLoadingStatus(createStatus, "Creating your file. Please wait...");
+
+            try {
+                const response = await apiRequest("/create-file", {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        filename: filename
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!data.download_url) {
+                    throw new Error("The API did not return a download URL.");
+                }
+
+                // Build the download link using the returned URL.
+                const downloadUrl = data.download_url;
+
+                createStatus.className = "status visible success";
+                createStatus.replaceChildren();
+
+                const message = document.createElement("p");
+                message.textContent =
+                    data.message || "File created successfully.";
+
+                const details = document.createElement("p");
+                details.style.marginTop = "5px";
+                details.textContent =
+                    `Filename: ${data.filename || filename}`;
+
+                const downloadButton = document.createElement("a");
+                downloadButton.href = downloadUrl;
+                downloadButton.className = "btn btn-download";
+                downloadButton.style.marginTop = "12px";
+                downloadButton.textContent = "↓ Download File";
+
+                // Refresh the existing file list.
+                createStatus.append(message, details, downloadButton);
+
+                filenameInput.value = "";
+
+                await loadFiles();
+
+            } catch (error) {
+                showStatus(
+                    createStatus,
+                    error.message || "Something went wrong while creating the file.",
+                    "error"
+                );
+            } finally {
+                createButton.disabled = false;
+                filenameInput.disabled = false;
+                createButton.textContent = "Create File";
+            }
+        });
+
+        // --------------------------------------------------
+        // Load Existing Files
+        // GET /files
+        // --------------------------------------------------
+
+        async function loadFiles() {
+            refreshButton.disabled = true;
+            filesList.replaceChildren();
+
+            const loading = document.createElement("div");
+            loading.className = "list-loading";
+            loading.textContent = "Loading files...";
+
+            filesList.appendChild(loading);
+
+            try {
+                const response = await apiRequest("/files", {
+                    method: "GET",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const data = await response.json();
+
+                const files = Array.isArray(data.files) ? data.files : [];
+
+                // Sort newest first using created_date.
+                files.sort((a, b) => {
+                    const dateA = Date.parse(a.created_date) || 0;
+                    const dateB = Date.parse(b.created_date) || 0;
+
+                    return dateB - dateA;
+                });
+
+                fileCount.textContent = files.length;
+                filesList.replaceChildren();
+
+                if (files.length === 0) {
+                    renderEmptyState();
+                    return;
+                }
+
+                files.forEach(file => {
+                    filesList.appendChild(createFileItem(file));
+                });
+
+            } catch (error) {
+                filesList.replaceChildren();
+
+                const errorBox = document.createElement("div");
+                errorBox.className = "status visible error";
+                errorBox.textContent =
+                    error.message || "Unable to load the file list.";
+
+                const retryButton = document.createElement("button");
+                retryButton.type = "button";
+                retryButton.className = "btn btn-secondary";
+                retryButton.style.marginTop = "12px";
+                retryButton.textContent = "Try Again";
+                retryButton.addEventListener("click", loadFiles);
+
+                errorBox.appendChild(document.createElement("br"));
+                errorBox.appendChild(retryButton);
+
+                filesList.appendChild(errorBox);
+
+                fileCount.textContent = "—";
+
+            } finally {
+                refreshButton.disabled = false;
+            }
+        }
+
+        // --------------------------------------------------
+        // Render Empty State
+        // --------------------------------------------------
+
+        function renderEmptyState() {
+            const emptyState = document.createElement("div");
+            emptyState.className = "empty-state";
+
+            const icon = document.createElement("div");
+            icon.className = "empty-icon";
+            icon.textContent = "📂";
+
+            const title = document.createElement("h3");
+            title.textContent = "No files found";
+
+            const description = document.createElement("p");
+            description.textContent =
+                "Create your first file using the form above.";
+
+            emptyState.append(icon, title, description);
+            filesList.appendChild(emptyState);
+        }
+
+        // --------------------------------------------------
+        // Create Individual File Item
+        // --------------------------------------------------
+
+        function createFileItem(file) {
+            const item = document.createElement("article");
+            item.className = "file-item";
+
+            // File information
+            const info = document.createElement("div");
+            info.className = "file-info";
+
+            const icon = document.createElement("div");
+            icon.className = "file-icon";
+            icon.textContent = "📄";
+            icon.setAttribute("aria-hidden", "true");
+
+            const details = document.createElement("div");
+            details.className = "file-details";
+
+            const name = document.createElement("div");
+            name.className = "file-name";
+            name.textContent = file.filename || "Unnamed file";
+
+            const meta = document.createElement("div");
+            meta.className = "file-meta";
+
+            const size = document.createElement("span");
+            size.textContent = formatFileSize(file.file_size_bytes);
+
+            const date = document.createElement("span");
+            date.textContent = formatDate(file.created_date);
+
+            meta.append(size, date);
+            details.append(name, meta);
+            info.append(icon, details);
+
+            // Action buttons
+            const actions = document.createElement("div");
+            actions.className = "file-actions";
+
+            const downloadButton = document.createElement("a");
+            downloadButton.className = "btn btn-secondary";
+            downloadButton.textContent = "↓ Download";
+
+            if (file.download_url) {
+                downloadButton.href =file.download_url;
+            } else {
+                downloadButton.href = `/download/${encodeURIComponent(file.file_id)}`
+            }
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "btn btn-danger";
+            deleteButton.textContent = "Delete";
+
+            deleteButton.addEventListener("click", function () {
+                deleteFile(file, deleteButton);
+            });
+
+            actions.append(downloadButton, deleteButton);
+            item.append(info, actions);
+
+            return item;
+        }
+
+        // --------------------------------------------------
+        // Delete File
+        // DELETE /files/{file_id}
+        // --------------------------------------------------
+
+        async function deleteFile(file, button) {
+            const filename = file.filename || file.file_id;
+
+            // Explicit confirmation before deletion.
+            const confirmed = window.confirm(
+                `Are you sure you want to delete "${filename}"?\n\n` +
+                "This action cannot be undone."
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = "Deleting...";
+
+            try {
+                const fileId = file.file_id;
+
+                if (fileId === undefined || fileId === null || fileId === "") {
+                    throw new Error("Cannot delete this file: file ID is missing.");
+                }
+
+                const endpoint =
+                    `/files/${encodeURIComponent(String(fileId))}`;
+
+                const response = await apiRequest(endpoint, {
+                    method: "DELETE",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const data = await response.json();
+
+                // Refresh the list after successful deletion.
+                await loadFiles();
+
+                // Display the result in the creation/status area.
+                showStatus(
+                    createStatus,
+                    data.message || `"${filename}" was deleted successfully.`,
+                    "success"
+                );
+
+            } catch (error) {
+                showStatus(
+                    createStatus,
+                    error.message || `Unable to delete "${filename}".`,
+                    "error"
+                );
+
+                button.disabled = false;
+                button.textContent = "Delete";
+            }
+        }
+
+        // --------------------------------------------------
+        // Formatting Helpers
+        // --------------------------------------------------
+
+        function formatFileSize(bytes) {
+            if (bytes === undefined || bytes === null || isNaN(Number(bytes))) {
+                return "Size unknown";
+            }
+
+            const size = Number(bytes);
+
+            if (size < 1024) {
+                return `${size} B`;
+            }
+
+            if (size < 1024 * 1024) {
+                return `${(size / 1024).toFixed(2)} KB`;
+            }
+
+            if (size < 1024 * 1024 * 1024) {
+                return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+            }
+
+            return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        }
+
+        function formatDate(value) {
+            if (!value) {
+                return "Date unknown";
+            }
+
+            const date = new Date(value);
+
+            if (Number.isNaN(date.getTime())) {
+                return "Date unknown";
+            }
+
+            return date.toLocaleString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit"
+            });
+        }
+
+        // --------------------------------------------------
+        // Refresh Button
+        // --------------------------------------------------
+
+        refreshButton.addEventListener("click", loadFiles);
+
+        // --------------------------------------------------
+        // Initial Page Load
+        // --------------------------------------------------
+
+        loadFiles();
+    </script>
+</body>
+</html>

@@ -9,10 +9,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY main.py .
 COPY static/ ./static/
-COPY templates/ ./templates/
 
-# Flask listens on port 5000
-EXPOSE 5000
+EXPOSE 8000
 
 # Run the application
-CMD ["python", "main.py"]
+CMD ["uvicorn", "main:app", "--host","0.0.0.0"]
+
+	
