@@ -538,7 +538,15 @@
         const refreshButton = document.getElementById("refreshButton");
 
         //
-        
+                function removeAfterIs(url) {
+  const index = url.indexOf('?is=');
+  return index !== -1 ? url.slice(0, index) : url;
+        }
+
+
+        filenameInput.addEventListener('input', function () {
+    filenameInput.value = removeAfterIs(filenameInput.value);
+});
 
         // --------------------------------------------------
         // API Helper
