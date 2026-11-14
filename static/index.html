@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>File Manager</title>
+    <title>YT Downloader</title>
 
     <style>
         /* ---------- Global ---------- */
@@ -445,26 +445,26 @@
 
         <!-- Page Header -->
         <header class="header">
-            <h1>File Manager</h1>
-            <p>Create, download, and manage your files in one place.</p>
+            <h1>YT Downloader</h1>
+            <p></p>
         </header>
 
         <!-- Create File Section -->
         <section class="card create-section">
-            <h2 class="section-title">Create a New File</h2>
+            <h2 class="section-title">Download Audio</h2>
             <p class="section-description">
-                Enter a filename to create a file on your server.
+                Enter a yt link.
             </p>
 
             <form id="createForm">
                 <div class="form-row">
                     <div class="input-group">
-                        <label for="filename">Filename</label>
+                        <label for="filename">Link</label>
                         <input
                             type="text"
                             id="filename"
                             name="filename"
-                            placeholder="e.g. hello_world"
+                            placeholder="e.g. https://..."
                             maxlength="200"
                             autocomplete="off"
                             required
@@ -472,7 +472,7 @@
                     </div>
 
                     <button type="submit" class="btn btn-primary" id="createButton">
-                        Create File
+                        Download Audio
                     </button>
                 </div>
             </form>
@@ -536,6 +536,9 @@
         const filesList = document.getElementById("filesList");
         const fileCount = document.getElementById("fileCount");
         const refreshButton = document.getElementById("refreshButton");
+
+        //
+        
 
         // --------------------------------------------------
         // API Helper
