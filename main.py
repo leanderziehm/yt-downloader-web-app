@@ -196,11 +196,3 @@ def delete_file(filename: str):
         "filename": file_path.name,
         "file_id": file_path.name,
     }
-
-
-def main():
-    create_file("hello.txt")
-
-
-if __name__ == "__main__":
-    main()
